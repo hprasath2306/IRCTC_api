@@ -26,29 +26,29 @@ export const getSeatAvailability = async (req: Request, res: Response) => {
 export const bookSeat = async (req: Request, res: Response) => {
   const { trainId } = req.body;
   const userId = (req as any).user.id;
-
   try {
-    const train = await prisma.train.findUnique({
-      where: { id: trainId },
-      include: { bookings: true },
+    const result = await prisma.$transaction(async (prisma) => {
+      const train = await prisma.train.findUnique({
+        where: { id: trainId },
+        include: { bookings: true },
+      });
+
+      if (!train) {
+        throw new Error("Train not found");
+      }
+
+      const availableSeats = train.totalSeats - train.bookings.length;
+      if (availableSeats <= 0) {
+        throw new Error("No seats available");
+      }
+      const booking = await prisma.booking.create({
+        data: { userId, trainId, seatNo: train.bookings.length + 1 },
+      });
+
+      return booking;
     });
 
-    if (!train) {
-      res.status(404).json({ message: "Train not found" });
-      return;
-    }
-
-    const availableSeats = train.totalSeats - train.bookings.length;
-    if (availableSeats <= 0) {
-      res.status(400).json({ message: "No seats available" });
-      return;
-    }
-
-    const booking = await prisma.booking.create({
-      data: { userId, trainId, seatNo: train.bookings.length + 1 },
-    });
-
-    res.status(201).json(booking);
+    res.status(201).json(result);
   } catch (error) {
     res.status(500).json({ message: "Error booking seat", error });
   }
